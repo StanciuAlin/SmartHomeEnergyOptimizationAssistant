@@ -50,17 +50,15 @@ The forecast service (`forecast_service.py`) is automatically run in the contain
 The script takes historical data from _InfluxDB_ and generates predictions for the next `6 hours`.
 
 ### 5. Accessing the interfaces
-* **Node-RED:** to view data streams
-  * `http://localhost:1880`
-* **Grafana:** for advanced dashboards
-  * `http://localhost:3000`
-    * _User_: `admin`
-    * _Password_: `smartappliance`
-* **InfluxDB UI:** for real-time data storage
-  * `http://localhost:8086`
+* **Node-RED** to view data streams: `http://localhost:1880`
+* **Grafana** for advanced dashboards: `http://localhost:3000`
+  * _User_: `admin`
+  * _Password_: `smartappliance`
+* **InfluxDB UI** for real-time data storage: `http://localhost:8086`
 
 ## Configure Credentials (Default)
-* **InfluxDB Org/Bucket:** `ucv` / `energy_data`
+* **InfluxDB Org:** `ucv`
+* **Bucket:** `energy_data`
 * **Admin Token:** `201dcc33-81e8-4d1d-94c0-a9a00ddafcab`
 * **MQTT Broker:** `mosquitto:1883`
 
@@ -107,3 +105,4 @@ The system provides the following information:
 * **Instantaneous consumption (W):** collected from the `10 emulated sockets`.
 * **Comparative graph:** Current consumption data compared to the predicted values ​​(`predicted_value`).
 * **Status monitoring:** The `online/offline` status of each device via `LWT`.
+
