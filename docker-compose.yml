@@ -1,55 +1,51 @@
 services:
   influxdb:
     image: influxdb:2.7
-    container_name: influxdb_smart_home
+    container_name: influxdb
     ports:
       - "8086:8086"
     volumes:
       - influxdb_data:/var/lib/influxdb2
-      - influxdb_config:/etc/influxdb2
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
       - DOCKER_INFLUXDB_INIT_USERNAME=admin
-      - DOCKER_INFLUXDB_INIT_PASSWORD=smartappliance  # Minim 8 caractere
+      - DOCKER_INFLUXDB_INIT_PASSWORD=smartappliance
       - DOCKER_INFLUXDB_INIT_ORG=ucv
       - DOCKER_INFLUXDB_INIT_BUCKET=energy_data
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=201dcc33-81e8-4d1d-94c0-a9a00ddafcab
 
   mosquitto:
     image: eclipse-mosquitto:2.0
-    container_name: mosquitto_broker
+    container_name: mosquitto
     ports:
       - "1883:1883"
     volumes:
-      - ./mosquitto/config:/mosquitto/config/mosquito.conf:ro
+      - ./mosquitto/config:/mosquitto/config:ro
 
-  edge:
+  edge_simulator:
     build: ./edge
+    container_name: sonoff_simulator
     environment:
       - MQTT_HOST=mosquitto
       - MQTT_PORT=1883
+    command: python -u sonoff.py
+    depends_on:
+      - mosquitto
+    restart: on-failure
+
+  edge_forecast:
+    build: ./edge
+    container_name: forecast_service
+    environment:
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=201dcc33-81e8-4d1d-94c0-a9a00ddafcab
       - INFLUXDB_ORG=ucv
       - INFLUXDB_BUCKET=energy_data
-    depends_on:
-      - mosquitto
-      - influxdb
-
-  grafana:
-    image: grafana/grafana:11.1.0
-    container_name: grafana_smart_home
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=smartappliance
+    command: python -u forecast_service.py
     depends_on:
       - influxdb
-    volumes:
-      - grafana_data:/var/lib/grafana
+    restart: on-failure
 
-# --- LOGICA SI AUTOMATIZARE ---
   nodered:
     image: nodered/node-red:latest
     container_name: nodered_logic
@@ -60,6 +56,20 @@ services:
     depends_on:
       - mosquitto
       - influxdb
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=smartappliance
+    depends_on:
+      - influxdb
+    volumes:
+      - grafana_data:/var/lib/grafana
+
 
 volumes:
   node_red_data:
