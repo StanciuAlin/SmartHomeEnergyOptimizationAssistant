@@ -6,103 +6,143 @@ The project is an advanced IoT ecosystem designed for monitoring, simulating and
 
 The system is fully containerized using Docker and includes the following services defined in `docker-compose.yml`:
 
-* **Edge Simulator (`sonoff_simulator`):** Emulates 10 `Sonoff POW R2` devices that transmit telemetry (power, voltage) via `MQTT`.
-* **MQTT Broker (`mosquitto`):** Manages communication between sensors and the rest of the system using the `MQTT` protocol on port `1883`.
-* **Database (`influxdb`):** Stores consumption data in a format optimized for time series (`InfluxDB v2.7`).
-* **Forecast Service (`edge_forecast`):** A Python service that uses the _Prophet_ model to predict energy consumption over the next `6 hours`.
-* **Logic Engine (`nodered_logic`):** Manages data flows and automation logic through _Node-RED_.
-* **Visualization (`grafana`):** Dashboard for monitoring real-time data and predictions.
+- **Hardware Simulator (Wokwi):** Runs a MicroPython script on an ESP32 that simulates real consumption for 7 `Sonoff POW R2` devices with 2 of them controlled through potentiometers and transmits telemetry (power, voltage) via `MQTT`.
+- **MQTT Broker (HiveMQ Cloud):** Manages secure (TLS) communication between sensors and the rest of the infrastructure.
+- **Logic Engine (Node-RED):** Retrieves MQTT data, formats it for the database, and executes predictive protection commands (Edge AI).
+- **Database (InfluxDB v2.7):** Stores consumption history and AI forecast results.
+- **Forecasting Service (Edge AI):** A Python service using the Prophet model to predict energy consumption for the next 6 hours.
+- **Visualization (Grafana):** An interactive control panel for monitoring data and manually controlling the appliances.
 
 ## 📂 Project Structure
 
 ```plaintext
 Smart-Home-Energy/
 ├── edge/
-│ ├── sonoff.py # Python script simulating Sonoff sockets (MQTT Client)
-│ ├── forecast_service.py # Forecast service based on the Prophet model
-│ └── requirements.txt # Required libraries (pandas, prophet, influxdb-client)
-├── docker-compose.yml # Configuring the entire ecosystem using containers
-├── mosquitto/
-│ └── config/
-│ └── mosquitto.conf # Configuring the MQTT broker
-└── nodered/ # Business logic and dashboard (accessible on port 1880)
+│   ├── forecast_service.py   # Forecast service based on the Prophet model
+│   ├── Dockerfile            # Python environment setup (with build-essential for Prophet)
+│   └── requirements.txt      # Dependencies: pandas, prophet, influxdb-client
+├── node_RED/
+│   ├── flows.json            # MQTT processing logic and Edge AI control
+├── wowki/
+│   ├── main.py               # MicroPython code for ESP32 simulation
+│   └── diagram.json          # Hardware connection schema in Wokwi
+├── grafana/
+│   └── Dashboard_JSON.json   # Grafana dashboard configuration
+└── docker-compose.yml        # Orchestration of the entire ecosystem
 ```
 
 ## 🛠️ Installation and Running
 
-### 1. Prerequisites
-Make sure you have installed:
-* **Docker & Docker Compose:** To run the entire infrastructure as containers.
-* **Python 3.11+:** Used inside containers for emulator and forecast service.
+### Prerequisites
 
-### 2. Launch the system
+Make sure you have installed:
+
+- **Docker & Docker Compose:** To run the entire infrastructure as containers.
+- **HiveMQ Cloud Account** (for the MQTT broker).
+- **Python 3.11+:** Used inside containers for emulator and forecast service.
+
+### Launch the system
+
+### 1. Start the Backend Infrastructure (Docker)
 From the project root directory, run:
+
 ```bash
 docker-compose up -d
 ```
-_This command automatically starts Mosquitto (port 1883), InfluxDB (port 8086), Node-RED (port 1880), and Grafana (port 3000)._
 
-### 3. Start the Sonoff Simulator
-The simulator (`sonoff.py`) is automatically started by _Docker_. It publishes data about _power_ and _voltage_ on topics like `tele/sonoff_pow_XX/SENSOR`.
+_This will automatically start InfluxDB, Node-RED, Grafana, and the Forecasting Service and will initialize the network and volumes for data persistence._
 
-### 4. Run the AI ​​Module (Forecast)
-The forecast service (`forecast_service.py`) is automatically run in the container.
-The script takes historical data from _InfluxDB_ and generates predictions for the next `6 hours`.
+### 2. Launch the Hardware Simulator (Wokwi)
 
-### 5. Accessing the interfaces
-* **Node-RED** to view data streams: `http://localhost:1880`
-* **Grafana** for advanced dashboards: `http://localhost:3000`
-  * _User_: `admin`
-  * _Password_: `smartappliance`
-* **InfluxDB UI** for real-time data storage: `http://localhost:8086`
+Once the infrastructure is active, start the data source:
+* Open the Wokwi project link in your browser.
+* Ensure the MQTT credentials in `main.py` match your **HiveMQ Cloud** details.
+* Click the **Start Simulation** button. You should see the telemetry table appearing in the Wokwi console.
 
-## Configure Credentials (Default)
-* **InfluxDB Org:** `ucv`
-* **Bucket:** `energy_data`
-* **Admin Token:** `201dcc33-81e8-4d1d-94c0-a9a00ddafcab`
-* **MQTT Broker:** `mosquitto:1883`
+### 3. Configure Node-RED (Logic Engine)
 
-## Technical Details
+* Access the interface at http://localhost:1880.
+* Click the **Menu** (top right) -> **Import**.
+* Select the `flows.json` file from the `node_RED/` folder.
+* Click **Deploy**. Node-RED will now start processing MQTT messages and saving them to InfluxDB.
+
+### 4. Connect to InfluxDB (Database)
+
+* Access the UI at http://localhost:8086.
+* Log in with the credentials: `admin` / `smartappliance`.
+* Check the **Data Explorer** to ensure that buckets are created and telemetry is arriving in the `energy_usage` measurement.
+* Note: The **Admin Token** is pre-configured to `201dcc33-81e8-4d1d-94c0-a9a00ddafcab`.
+
+### 5. Configure Grafana (Visualization)
+
+* Access Grafana at http://localhost:3000.
+* Log in with admin / smartappliance.
+* Import the Dashboard:
+  * Go to **Dashboards** -> **New** -> **Import**.
+  * Upload the `Dashboard Smart Home.json` file from the `grafana/` folder.
+* **Select Data Source:** Ensure the dashboard is connected to your InfluxDB instance using the Flux query language.
+
+## ⚡ Technical Details
+
 ### Sonoff Simulation
-Each emulated device sends data every `15 seconds`:
+
+Each emulated device sends data every `5 seconds`:
+
 1. **Telemetry Topic:** `tele/sonoff_pow_XX/SENSOR`
 2. **Simulated data:** Voltage (`228V` - `235V`) and Power (`0W` - `500W`).
-3. **Auto-discovery:** Sends `MQTT Discovery` configurations to be automatically recognized by platforms like Home Assistant.
+3. **Auto-discovery:** Sends MQTT Discovery configurations to be automatically recognized by platforms like Home Assistant.
 
-### Forecast Service (AI)
+### Forecasting Service (AI)
+
 The forecast module runs periodically and performs the following steps:
-1. Extracts the last `24 hours` of data from the `energy_data` bucket.
+
+1. Extracts the last **24 hours** of data from InfluxDB for each plug (`sonoff_pow_01`, `02`).
 2. Trains the _Prophet_ model on the power data.
-3. Generates predictions (`yhat`, `upper/lower bounds`) for the next `6 hours`.
-4. Saves the results back to _InfluxDB_ in the `energy_forecast` measurement.
+3. Generates predictions (`yhat`, `upper/lower bounds`) for the next **6 hours**.
+4. Saves the results back to InfluxDB in the `energy_forecast` measurement.
 
-### Optimization outcomes
-The `400W` threshold warning module is implemented at the `Node-RED` logic level. <br>
-#### ⚡ Technical Details
-* _Data Source_: The _Node-RED_ logic receives real-time messages via the `MQTT` protocol from the _Sonoff_ socket emulator. These messages are sent to the `tele/sonoff_pow_XX/SENSOR` topic and contain the `ENERGY.Power` field.
-* _Trigger Threshold_: In _Node-RED_, there is a `Function` node that evaluates the numerical value of the power (`msg.payload.ENERGY.Power`).
+### Optimization outcomes: Edge AI Control Logic (Node-RED)
 
-* _Warning Logic_:
-  * If the reported power is above `400W`, the flow routes the message to a notification node (for example, a visual element in the Dashboard or an audible alert).
-  * Since the emulator generates random values ​​between `0.0W` and `500.0W`, the alert will be triggered frequently during the simulation to test the system's reaction.
+The system includes an automated protection module:
 
-#### 🛠️ Implementation in the Node-RED Flow
+* **Trigger Threshold:** `400W`.
+* **Action:** Node-RED automatically sends an `OFF` command to the respective plug via MQTT to prevent overload. 
 
-Within the _Node-RED_ interface (accessible at `http://localhost:1880`), this module is composed of:
-1. _MQTT In Node_ listens to data from sockets.
-2. _JSON Parser_ transforms the received text into a formatted object to extract the power value.
-3. _Function Node_ checks the condition `payload.ENERGY.Power > 400`.
-4. _UI Control_ sends a visual alert to the _Grafana_ and _Node-RED_ dashboard, warning the user that an appliance is consuming too much.
+### Implementation in the Node-RED Flow
 
-This functionality is part of the `Logic Engine` described in the project architecture, with the role of protecting the network or informing the user about high consumption in real time.
+Within the **Node-RED** interface (accessible at `http://localhost:1880`), the system logic has been upgraded to a proactive Edge **AI Master Controller**:
 
-## 🧠 Algorithms Used
-* **Prophet**: Used to capture seasonality in energy consumption and generate predictions based on the `24-hour` history.
-* **Logic Engine**: Implemented in _Node-RED_ to process `MQTT` messages and store them in _InfluxDB_.
+**1. Telemetry Processing (Flow 1)**:
+
+* **MQTT In Node:** Listens for real-time telemetry from all devices via `tele/+/SENSOR`.
+* **Function Node (`GetEnergyUsage`):** Parses incoming data, extracts power values, and maps them to specific device IDs.
+* **InfluxDB Out Node:** Stores formatted data into the `energy_usage` measurement for historical analysis and AI training.
+
+**2. Predictive Control (Flow 2):**
+* **InfluxDB In Node:** Periodically queries the latest AI predictions from the `energy_forecast` measurement.
+* **Edge AI Function Node (`CheckAbove400W`):** Processes the forecast array. If the AI predicts that a specific device (e.g., `sonoff_pow_01`) will exceed **400W** in the next 6 hours, it triggers a preventive action.
+* **MQTT Out Node:** Automatically sends an `OFF` command to the physical or emulated device before the overload occurs.
+* **Alert Logging:** Simultaneously writes an `alert_active: 1` status to the `system_alerts` measurement in InfluxDB to notify the Grafana dashboard.
+
+**3. Manual Overrides:**
+* **HTTP In Nodes:** Accept `ON/OFF` requests from the Grafana dashboard's HTML buttons, allowing users to override the AI and control appliances manually via MQTT.
+
+This **Logic Engine** acts as the central nervous system of the project, shifting from simple monitoring to autonomous grid protection using real-time predictive data.
+
+## 🧠 Algorithms & Intelligence
+* **Prophet (Meta):** Utilized by the `forecast_service` to perform time-series analysis on a per-device basis. It captures consumption patterns over a **24-hour history** to generate a **6-hour forecast**, including `upper` and `lower` confidence bounds.
+* **Edge AI Logic:** Implemented within Node-RED to handle **Multi-Device Decision Making**. Unlike standard threshold alerts, this algorithm evaluates future-dated timestamps to mitigate risks before they manifest in the physical system.
+* **Data Pipelining:** Uses **Flux (InfluxDB)** to aggregate, window, and pivot raw power data, ensuring the AI models receive clean, high-density information for training.
 
 ## 📊 Dashboard and Results
-The system provides the following information:
-* **Instantaneous consumption (W):** collected from the `10 emulated sockets`.
-* **Comparative graph:** Current consumption data compared to the predicted values ​​(`predicted_value`).
-* **Status monitoring:** The `online/offline` status of each device via `LWT`.
 
+The Grafana interface provides:
+* **Instantaneous Consumption:** Displayed via Gauge indicators.
+* **AI Confidence Band:** Time Series graphs showing predicted values and the error margin (upper/lower bound).
+* **Manual Control:** Interactive ON/OFF buttons that send HTTP commands to Node-RED, which are then converted into MQTT messages.
+* **Alerts:** History of forced shut-off events generated by the AI.
+
+## 🌟 Conclusion: The Future of Smart Energy Management
+**Smart Home Energy Optimization Assistant** demonstrates the power of integrating **IoT, Edge Computing, and Artificial Intelligence** to transform a standard home into an intelligent, self-optimizing ecosystem. By moving beyond simple manual control and into the realm of **Predictive Analytics**, we achieve a system that doesn't just react to overconsumption but actively prevents it.
+
+This "Optimization Assistant" is more than a technical showcase; it is a scalable foundation for a greener, smarter, and more responsive future in home automation.
