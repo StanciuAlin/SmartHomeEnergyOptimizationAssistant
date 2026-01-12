@@ -159,7 +159,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB_SMART_HOME}"
           },
-          "query": "from(bucket: \"energy_data\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_usage\")\n  |> filter(fn: (r) => r[\"_field\"] == \"power\")\n  |> last()",
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_usage\")\n  // 1. Selectăm câmpurile (Atenție: verifică dacă ai pus device_id sau _deviceId în Node-RED)\n  |> filter(fn: (r) => r[\"_field\"] == \"power\" or r[\"_field\"] == \"device_id\")\n  // 2. Pivotăm datele pentru a avea rânduri cu [time, power, device_id]\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  // 3. Filtrăm după priza selectată în dropdown-ul de sus\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device}\")\n  // 4. Luăm ultima înregistrare (tail nu are nevoie de coloana _value)\n  |> tail(n: 1)\n  // 5. Mapăm coloana 'power' înapoi la '_value' ca să știe Grafana ce să deseneze\n  |> map(fn: (r) => ({ _time: r._time, _value: r.power, name: r.device_id }))",
           "refId": "A"
         }
       ],
@@ -242,7 +242,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB_SMART_HOME}"
           },
-          "query": "from(bucket: \"energy_data\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"system_alerts\")\n  |> filter(fn: (r) => r[\"_field\"] == \"alert_active\")\n  |> group(columns: [\"device\"])\n  |> last()",
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"system_alerts\")\n  |> filter(fn: (r) => r[\"_field\"] == \"alert_active\" or r[\"_field\"] == \"device_id\")\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device}\")\n  |> tail(n: 1)",
           "refId": "A"
         }
       ],
@@ -344,7 +344,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "predicted_value sonoff_pow_01"
+              "options": "predicted_value {_start=\"2026-01-12 20:37:05.052 +0000 UTC\", _stop=\"2026-01-13 20:00:06.085 +0000 UTC\"}"
             },
             "properties": [
               {
@@ -433,7 +433,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "predicted_value sonoff_pow_02"
+              "options": "predicted_value {_start=\"2026-01-12 20:37:05.052 +0000 UTC\", _stop=\"2026-01-13 20:00:06.085 +0000 UTC\"}"
             },
             "properties": [
               {
@@ -484,7 +484,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB_SMART_HOME}"
           },
-          "query": "from(bucket: \"energy_data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_forecast\")\n  |> filter(fn: (r) => r[\"device\"] == \"${device}\")\n  |> filter(fn: (r) => r[\"_field\"] == \"lower_bound\" or r[\"_field\"] == \"predicted_value\" or r[\"_field\"] == \"upper_bound\")\n  |> yield(name: \"forecast\")",
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_forecast\")\n  // Selectăm toate câmpurile necesare, inclusiv noul câmp device_id\n  |> filter(fn: (r) => r[\"_field\"] == \"lower_bound\" or \n                       r[\"_field\"] == \"predicted_value\" or \n                       r[\"_field\"] == \"upper_bound\" or \n                       r[\"_field\"] == \"device_id\")\n  // Pivotăm datele pentru a avea device_id pe același rând cu valorile numerice\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  // Filtrăm după dispozitivul selectat în variabila din Grafana\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device}\")\n  |> yield(name: \"forecast\")",
           "refId": "A"
         }
       ],
@@ -628,7 +628,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB_SMART_HOME}"
           },
-          "query": "from(bucket: \"energy_data\")\n  |> range(start: now(), stop: 6h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_forecast\")\n  |> filter(fn: (r) => r[\"_field\"] == \"predicted_value\")\n  |> filter(fn: (r) => r[\"_value\"] > 400.0)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"device\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"], desc: false)",
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_forecast\")\n  |> filter(fn: (r) => r[\"_field\"] == \"predicted_value\")\n  |> filter(fn: (r) => r[\"_value\"] > 400.0)\n  // |> last()",
           "refId": "A"
         }
       ],
@@ -636,22 +636,26 @@
       "type": "table"
     }
   ],
-  "refresh": "5s",
+  "refresh": "",
   "schemaVersion": 39,
   "tags": [],
   "templating": {
     "list": [
       {
         "current": {},
-        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"energy_data\", tag: \"device\")",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${DS_INFLUXDB_SMART_HOME}"
+        },
+        "definition": "import \"influxdata/influxdb/schema\"\n\nfrom(bucket: \"energy_data\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_usage\")\n  |> filter(fn: (r) => r[\"_field\"] == \"device_id\")\n  |> keep(columns: [\"_value\"])\n  |> distinct(column: \"_value\")",
         "hide": 0,
-        "includeAll": true,
-        "label": "Select appliance",
-        "multi": true,
+        "includeAll": false,
+        "label": "Select device",
+        "multi": false,
         "name": "device",
         "options": [],
         "query": {
-          "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"energy_data\", tag: \"device\")"
+          "query": "import \"influxdata/influxdb/schema\"\n\nfrom(bucket: \"energy_data\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_usage\")\n  |> filter(fn: (r) => r[\"_field\"] == \"device_id\")\n  |> keep(columns: [\"_value\"])\n  |> distinct(column: \"_value\")"
         },
         "refresh": 1,
         "regex": "",
@@ -662,13 +666,13 @@
     ]
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-6h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Dashboard Smart Home",
   "uid": "df8kx0hsg94owb",
-  "version": 11,
+  "version": 16,
   "weekStart": ""
 }

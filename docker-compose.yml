@@ -17,6 +17,7 @@ services:
       - DOCKER_INFLUXDB_INIT_BUCKET=energy_data
       # Static Admin Token used for secure communication between services
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=201dcc33-81e8-4d1d-94c0-a9a00ddafcab
+      - TZ=Europe/Bucharest
 
   # --- AI/ANALYTICS LAYER ---
   # Edge Forecast: Python service running the Prophet model for energy prediction
@@ -29,6 +30,10 @@ services:
       - INFLUXDB_TOKEN=201dcc33-81e8-4d1d-94c0-a9a00ddafcab
       - INFLUXDB_ORG=ucv
       - INFLUXDB_BUCKET=energy_data
+      - TZ=Europe/Bucharest
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     command: python -u forecast_service.py # -u flag for unbuffered logs (real-time console output)
     depends_on:
       - influxdb # Ensures InfluxDB starts before the forecast service attempts to connect
