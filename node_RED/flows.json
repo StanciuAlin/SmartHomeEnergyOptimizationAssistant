@@ -1,0 +1,492 @@
+[
+    {
+        "id": "4676ce2db9bd63d7",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "b0bdfa04607c53a9",
+        "type": "comment",
+        "z": "4676ce2db9bd63d7",
+        "name": "WARNING: please check you have started this container with a volume that is mounted to /data\\n otherwise any flow changes are lost when you redeploy or upgrade the container\\n (e.g. upgrade to a more recent node-red docker image).\\n  If you are using named volumes you can ignore this warning.\\n Double click or see info side panel to learn how to start Node-RED in Docker to save your work",
+        "info": "\nTo start docker with a bind mount volume (-v option), for example:\n\n```\ndocker run -it -p 1880:1880 -v /home/user/node_red_data:/data --name mynodered nodered/node-red\n```\n\nwhere `/home/user/node_red_data` is a directory on your host machine where you want to store your flows.\n\nIf you do not do this then you can experiment and redploy flows, but if you restart or upgrade the container the flows will be disconnected and lost. \n\nThey will still exist in a hidden data volume, which can be recovered using standard docker techniques, but that is much more complex than just starting with a named volume as described above.",
+        "x": 350,
+        "y": 80,
+        "wires": []
+    },
+    {
+        "id": "56173f1101ed5380",
+        "type": "mqtt in",
+        "z": "4676ce2db9bd63d7",
+        "name": "Read Sonoff Power - MQTT IN Node",
+        "topic": "tele/+/SENSOR",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "80e42eb4f2066149",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 160,
+        "y": 220,
+        "wires": [
+            [
+                "66ae0e3055a1e4bb"
+            ]
+        ]
+    },
+    {
+        "id": "66ae0e3055a1e4bb",
+        "type": "json",
+        "z": "4676ce2db9bd63d7",
+        "name": "Power Input Parser",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 430,
+        "y": 220,
+        "wires": [
+            [
+                "35eba8d83d9f4ef9"
+            ]
+        ]
+    },
+    {
+        "id": "35eba8d83d9f4ef9",
+        "type": "function",
+        "z": "4676ce2db9bd63d7",
+        "name": "GetEnergyUsage()",
+        "func": "/**\n * Node-RED Function: Prepare MQTT data for InfluxDB v2\n * This script parses the incoming telemetry and formats it into a structure\n * that the InfluxDB Out node understands natively.\n */\n\nif (msg.payload && msg.payload.ENERGY) {\n    // Extract device ID from MQTT topic (e.g., \"tele/sonoff_pow_01/SENSOR\" -> \"sonoff_pow_01\")\n    const deviceId = msg.topic.split('/')[1];\n\n    // --- Field Configuration ---\n    // The InfluxDB node will treat each key in msg.payload as a separate \"Field\".\n    // We convert the power value to a float to ensure numerical storage in the database.\n    msg.payload = {\n        power: parseFloat(msg.payload.ENERGY.Power)\n    };\n\n    // --- Tag Configuration ---\n    // Tags are indexed in InfluxDB, making queries (like filtering by device) much faster.\n    msg.tags = {\n        device: deviceId\n    };\n\n    // --- Measurement Setup ---\n    // This defines the \"Table\" name. It must be 'energy_usage' so the \n    // Python forecast service can find the historical data.\n    msg.measurement = \"energy_usage\";\n\n    return msg;\n}\n\n// If the message doesn't contain energy data, drop it (return null) to prevent database errors.\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 650,
+        "y": 220,
+        "wires": [
+            [
+                "eaab3ed3371ee06e",
+                "c7d671f05f6798ed"
+            ]
+        ]
+    },
+    {
+        "id": "c7d671f05f6798ed",
+        "type": "influxdb out",
+        "z": "4676ce2db9bd63d7",
+        "influxdb": "58d9245a9571a86a",
+        "name": "InfluxDB OUT Node",
+        "measurement": "energy_usage",
+        "precision": "",
+        "retentionPolicy": "",
+        "database": "database",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "ucv",
+        "bucket": "energy_data",
+        "x": 920,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "fb12102017bbb3ba",
+        "type": "inject",
+        "z": "4676ce2db9bd63d7",
+        "name": "Alert Overload 400W",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "60",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 140,
+        "y": 780,
+        "wires": [
+            [
+                "7c2f8697b2a59af0"
+            ]
+        ]
+    },
+    {
+        "id": "7c2f8697b2a59af0",
+        "type": "influxdb in",
+        "z": "4676ce2db9bd63d7",
+        "influxdb": "58d9245a9571a86a",
+        "name": "Energy Forecast InfluxDB",
+        "query": "// Access the specific bucket where energy data is stored\nfrom(bucket: \"energy_data\")\n  // Look at a narrow window: 5 minutes ago to 6 hours into the future (forecast data)\n  |> range(start: -5m, stop: 6h)\n  // Target the specific measurement generated by the Prophet Python service\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_forecast\")\n  // Focus only on the central prediction value (ignoring lower/upper bounds for logic)\n  |> filter(fn: (r) => r[\"_field\"] == \"predicted_value\")\n  // CLEANUP: Exclude any system-level tags or meta-data that are not physical devices\n  |> filter(fn: (r) => r[\"device\"] != \"forecast_engine\") \n  // Separate the data stream by device ID so each plug is evaluated individually\n  |> group(columns: [\"device\"])\n  // Take only the most recent prediction point for each device to use in decision making\n  |> last()",
+        "rawOutput": false,
+        "precision": "",
+        "retentionPolicy": "",
+        "org": "ucv",
+        "x": 390,
+        "y": 780,
+        "wires": [
+            [
+                "53ddf3d45358debb"
+            ]
+        ]
+    },
+    {
+        "id": "53ddf3d45358debb",
+        "type": "function",
+        "z": "4676ce2db9bd63d7",
+        "name": "CheckAbove400W()",
+        "func": "/**\n * Flow 2: Edge AI - The Master Controller\n * This function processes forecast data and takes preventive actions if \n * an overload is predicted.\n */\n\n// Ensure the incoming payload exists and is an array (result from InfluxDB query)\nif (msg.payload && Array.isArray(msg.payload)) {\n    const threshold = 400.0; // Power limit in Watts\n    let mqttMessages = [];   // Array for Output 1: MQTT commands\n    let influxAlerts = [];    // Array for Output 2: Alert logging to InfluxDB\n\n    msg.payload.forEach(item => {\n        // Extract the device ID from the tags/columns\n        const deviceId = item.device;\n\n        // Skip processing if no device ID is found or if it's a generic engine tag\n        if (!deviceId || deviceId === \"forecast_engine\") return;\n\n        // The predicted power value from the 'energy_forecast' measurement\n        const predictedPower = item._value;\n\n        if (predictedPower > threshold) {\n            // --- PREDICTIVE ALERT LOGIC ---\n            // 1. Prepare an MQTT \"OFF\" command to prevent the predicted overload\n            mqttMessages.push({\n                payload: \"OFF\",\n                topic: `cmnd/${deviceId}/POWER`\n            });\n\n            // 2. Prepare an alert record for InfluxDB to track that an alert was triggered\n            influxAlerts.push({\n                payload: { alert_active: 1 },\n                measurement: \"system_alerts\",\n                tags: { device: deviceId }\n            });\n\n            // Log the warning to the Node-RED debug console\n            node.warn(`[EDGE AI ALERT] Overload predicted for ${deviceId}: ${predictedPower.toFixed(1)}W`);\n        } else {\n            // --- SAFE STATUS LOGIC ---\n            // If the AI confirms the predicted values are below the threshold, log a '0' (Safe)\n            influxAlerts.push({\n                payload: { alert_active: 0 },\n                measurement: \"system_alerts\",\n                tags: { device: deviceId }\n            });\n        }\n    });\n\n    /** * Return multiple messages:\n     * - The 1st element goes to the first output (MQTT Out node)\n     * - The 2nd element goes to the second output (InfluxDB Out node)\n     */\n    return [mqttMessages, influxAlerts];\n}\n\n// If payload is invalid or empty, do nothing\nreturn null;",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 640,
+        "y": 780,
+        "wires": [
+            [
+                "cf3e8869463f35aa"
+            ],
+            [
+                "42da9f1a48d38a43",
+                "967d09fad763556d"
+            ]
+        ]
+    },
+    {
+        "id": "cf3e8869463f35aa",
+        "type": "mqtt out",
+        "z": "4676ce2db9bd63d7",
+        "name": "MQTT OUT Node (To InfluxDB, Wokwi & Grafana)",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "80e42eb4f2066149",
+        "x": 1030,
+        "y": 580,
+        "wires": []
+    },
+    {
+        "id": "eaab3ed3371ee06e",
+        "type": "debug",
+        "z": "4676ce2db9bd63d7",
+        "name": "Debug Wokwi Energy",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 940,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "42da9f1a48d38a43",
+        "type": "influxdb out",
+        "z": "4676ce2db9bd63d7",
+        "influxdb": "58d9245a9571a86a",
+        "name": "",
+        "measurement": "system_alerts",
+        "precision": "",
+        "retentionPolicy": "",
+        "database": "database",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "ucv",
+        "bucket": "energy_data",
+        "x": 980,
+        "y": 780,
+        "wires": []
+    },
+    {
+        "id": "967d09fad763556d",
+        "type": "debug",
+        "z": "4676ce2db9bd63d7",
+        "name": "Debug Alert Status",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 930,
+        "y": 840,
+        "wires": []
+    },
+    {
+        "id": "0100f9962019df45",
+        "type": "inject",
+        "z": "4676ce2db9bd63d7",
+        "name": "Manual Power ON 01",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "cmnd/sonoff_pow_01/POWER",
+        "payload": "ON",
+        "payloadType": "str",
+        "x": 640,
+        "y": 660,
+        "wires": [
+            [
+                "cf3e8869463f35aa"
+            ]
+        ]
+    },
+    {
+        "id": "844929f17468be4c",
+        "type": "http in",
+        "z": "4676ce2db9bd63d7",
+        "name": "Grafana btn ON",
+        "url": "/plug/on",
+        "method": "get",
+        "upload": false,
+        "skipBodyParsing": false,
+        "swaggerDoc": "",
+        "x": 480,
+        "y": 560,
+        "wires": [
+            [
+                "c88e7ec81b8d4e7b",
+                "35de47354b960b54"
+            ]
+        ]
+    },
+    {
+        "id": "c88e7ec81b8d4e7b",
+        "type": "http response",
+        "z": "4676ce2db9bd63d7",
+        "name": "",
+        "statusCode": "",
+        "headers": {},
+        "x": 690,
+        "y": 540,
+        "wires": []
+    },
+    {
+        "id": "35de47354b960b54",
+        "type": "change",
+        "z": "4676ce2db9bd63d7",
+        "name": "Switch ON",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "ON",
+                "tot": "str"
+            },
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "\"cmnd/\" & msg.req.query.id & \"/POWER\"",
+                "tot": "jsonata"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 670,
+        "y": 580,
+        "wires": [
+            [
+                "cf3e8869463f35aa"
+            ]
+        ]
+    },
+    {
+        "id": "7d7fcc7be0545c5f",
+        "type": "change",
+        "z": "4676ce2db9bd63d7",
+        "name": "Button OFF",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "OFF",
+                "tot": "str"
+            },
+            {
+                "t": "set",
+                "p": "topic",
+                "pt": "msg",
+                "to": "\"cmnd/\" & msg.req.query.id & \"/POWER\"",
+                "tot": "jsonata"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 670,
+        "y": 460,
+        "wires": [
+            [
+                "cf3e8869463f35aa"
+            ]
+        ]
+    },
+    {
+        "id": "1fa2450b61c39680",
+        "type": "http in",
+        "z": "4676ce2db9bd63d7",
+        "name": "Grafana btn OFF",
+        "url": "/plug/off",
+        "method": "get",
+        "upload": false,
+        "skipBodyParsing": false,
+        "swaggerDoc": "",
+        "x": 480,
+        "y": 440,
+        "wires": [
+            [
+                "7d7fcc7be0545c5f",
+                "5b4d93b1cef62d64"
+            ]
+        ]
+    },
+    {
+        "id": "5b4d93b1cef62d64",
+        "type": "http response",
+        "z": "4676ce2db9bd63d7",
+        "name": "",
+        "statusCode": "",
+        "headers": {},
+        "x": 690,
+        "y": 420,
+        "wires": []
+    },
+    {
+        "id": "e04fa5a30c742179",
+        "type": "inject",
+        "z": "4676ce2db9bd63d7",
+        "name": "Manual Power ON 02",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "cmnd/sonoff_pow_02/POWER",
+        "payload": "ON",
+        "payloadType": "str",
+        "x": 640,
+        "y": 700,
+        "wires": [
+            [
+                "cf3e8869463f35aa"
+            ]
+        ]
+    },
+    {
+        "id": "80e42eb4f2066149",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "e1b9d425046b46d89b87f93fd80187c8.s1.eu.hivemq.cloud",
+        "port": "8883",
+        "tls": "2ff51ab50c66b74d",
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": true,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "58d9245a9571a86a",
+        "type": "influxdb",
+        "hostname": "127.0.0.1",
+        "port": 8086,
+        "protocol": "http",
+        "database": "database",
+        "name": "InfluxDB Node",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "http://influxdb:8086",
+        "timeout": 10,
+        "rejectUnauthorized": true
+    },
+    {
+        "id": "2ff51ab50c66b74d",
+        "type": "tls-config",
+        "name": "",
+        "cert": "",
+        "key": "",
+        "ca": "",
+        "certname": "",
+        "keyname": "",
+        "caname": "",
+        "servername": "",
+        "verifyservercert": true,
+        "alpnprotocol": ""
+    },
+    {
+        "id": "4d0639fb85552b60",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-influxdb": "0.7.0"
+        }
+    }
+]

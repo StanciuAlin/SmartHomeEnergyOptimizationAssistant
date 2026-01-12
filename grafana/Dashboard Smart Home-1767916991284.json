@@ -1,0 +1,674 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_INFLUXDB_SMART_HOME",
+      "label": "influxdb_smart_home",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "influxdb",
+      "pluginName": "InfluxDB"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "gauge",
+      "name": "Gauge",
+      "version": ""
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "11.1.0"
+    },
+    {
+      "type": "datasource",
+      "id": "influxdb",
+      "name": "InfluxDB",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "text",
+      "name": "Text",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${DS_INFLUXDB_SMART_HOME}"
+        },
+        "enable": true,
+        "iconColor": "red",
+        "name": "Shut-off Events",
+        "target": {
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"system_alerts\")\n  |> filter(fn: (r) => r[\"_field\"] == \"alert_active\")\n  |> filter(fn: (r) => r[\"_value\"] == 1) // Only when the alert is active",
+          "refId": "Anno"
+        }
+      }
+    ]
+  },
+  "description": "Energy Optimization Assistant ",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB_SMART_HOME}"
+      },
+      "description": "Consumption reported by Wokwi in real time.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "neutral": 0
+          },
+          "decimals": 1,
+          "fieldMinMax": true,
+          "mappings": [],
+          "max": 500,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "#EAB839",
+                "value": 300
+              },
+              {
+                "color": "red",
+                "value": 400
+              }
+            ]
+          },
+          "unit": "watt"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB_SMART_HOME}"
+          },
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_usage\")\n  |> filter(fn: (r) => r[\"_field\"] == \"power\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Actual consumption",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB_SMART_HOME}"
+      },
+      "description": "A panel that catches if there is a risk of overconsumption detected by AI.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "SAFE"
+                },
+                "1": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "OVERLOAD"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB_SMART_HOME}"
+          },
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"system_alerts\")\n  |> filter(fn: (r) => r[\"_field\"] == \"alert_active\")\n  |> group(columns: [\"device\"])\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "System Status",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB_SMART_HOME}"
+      },
+      "description": "Prophet calculates a safety interval (upper_bound and lower_bound).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "orange",
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "light-red",
+                "value": 400
+              }
+            ]
+          },
+          "unit": "watt"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lower_bound"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Min Forecast"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "super-light-orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": false,
+                  "viz": false
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "predicted_value sonoff_pow_01"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AI Prediction"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "upper_bound"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Max Forecast"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.spanNulls",
+                "value": true
+              },
+              {
+                "id": "custom.fillBelowTo",
+                "value": "lower_bound"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 25
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": false,
+                  "viz": false
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*01.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#75ef00",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*02.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "predicted_value sonoff_pow_02"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AI Prediction"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "palette-classic"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 5,
+      "maxPerRow": 2,
+      "options": {
+        "legend": {
+          "calcs": [
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "repeat": "device",
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB_SMART_HOME}"
+          },
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_forecast\")\n  |> filter(fn: (r) => r[\"device\"] == \"${device}\")\n  |> filter(fn: (r) => r[\"_field\"] == \"lower_bound\" or r[\"_field\"] == \"predicted_value\" or r[\"_field\"] == \"upper_bound\")\n  |> yield(name: \"forecast\")",
+          "refId": "A"
+        }
+      ],
+      "title": "Prediction Energy Consumption - ${device}",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB_SMART_HOME}"
+      },
+      "description": "",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 7,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<div style=\"display: flex; flex-direction: column; gap: 12px; padding: 10px; font-family: sans-serif;\">\n    \n    <div style=\"display: flex; align-items: center; justify-content: space-between; background: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1);\">\n        <span style=\"font-weight: bold; font-size: 13px; color: #d8d9da;\">SONOFF 01</span>\n        <div style=\"display: flex; gap: 8px;\">\n            <a href=\"http://localhost:1880/plug/on?id=sonoff_pow_01\" target=\"hidden_iframe\" \n               style=\"background-color: #2d7e2d; color: white; padding: 6px 16px; text-decoration: none; font-size: 12px; font-weight: bold; border-radius: 4px; display: inline-block;\">ON</a>\n            <a href=\"http://localhost:1880/plug/off?id=sonoff_pow_01\" target=\"hidden_iframe\" \n               style=\"background-color: #a32a2a; color: white; padding: 6px 16px; text-decoration: none; font-size: 12px; font-weight: bold; border-radius: 4px; display: inline-block;\">OFF</a>\n        </div>\n    </div>\n\n    <div style=\"display: flex; align-items: center; justify-content: space-between; background: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1);\">\n        <span style=\"font-weight: bold; font-size: 13px; color: #d8d9da;\">SONOFF 02</span>\n        <div style=\"display: flex; gap: 8px;\">\n            <a href=\"http://localhost:1880/plug/on?id=sonoff_pow_02\" target=\"hidden_iframe\" \n               style=\"background-color: #2d7e2d; color: white; padding: 6px 16px; text-decoration: none; font-size: 12px; font-weight: bold; border-radius: 4px; display: inline-block;\">ON</a>\n            <a href=\"http://localhost:1880/plug/off?id=sonoff_pow_02\" target=\"hidden_iframe\" \n               style=\"background-color: #a32a2a; color: white; padding: 6px 16px; text-decoration: none; font-size: 12px; font-weight: bold; border-radius: 4px; display: inline-block;\">OFF</a>\n        </div>\n    </div>\n    \n</div>",
+        "mode": "html"
+      },
+      "pluginVersion": "11.1.0",
+      "title": "Switch appliance state",
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB_SMART_HOME}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "color-text"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 400
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "_time"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Estimation Hour Overload"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sonoff_pow_01 {_field=\"predicted_value\", _start=\"2026-01-08 23:53:43.776464131 +0000 UTC\", _stop=\"2026-01-09 05:53:43.776464131 +0000 UTC\"}"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Consumption Sonoff 1"
+              },
+              {
+                "id": "unit",
+                "value": "watt"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sonoff_pow_02 {_field=\"predicted_value\", _start=\"2026-01-08 23:53:43.776464131 +0000 UTC\", _stop=\"2026-01-09 05:53:43.776464131 +0000 UTC\"}"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Consumption Sonoff 2"
+              },
+              {
+                "id": "unit",
+                "value": "watt"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 6,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "sonoff_pow_02 {_field=\"predicted_value\", _start=\"2026-01-08 22:21:12.530332756 +0000 UTC\", _stop=\"2026-01-09 04:21:12.530332756 +0000 UTC\"}"
+          }
+        ]
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB_SMART_HOME}"
+          },
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: now(), stop: 6h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_forecast\")\n  |> filter(fn: (r) => r[\"_field\"] == \"predicted_value\")\n  |> filter(fn: (r) => r[\"_value\"] > 400.0)\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"device\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"], desc: false)",
+          "refId": "A"
+        }
+      ],
+      "title": "Overconsumption Events",
+      "type": "table"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"energy_data\", tag: \"device\")",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Select appliance",
+        "multi": true,
+        "name": "device",
+        "options": [],
+        "query": {
+          "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"energy_data\", tag: \"device\")"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Dashboard Smart Home",
+  "uid": "df8kx0hsg94owb",
+  "version": 11,
+  "weekStart": ""
+}

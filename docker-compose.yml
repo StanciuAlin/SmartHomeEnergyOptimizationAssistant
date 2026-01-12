@@ -1,80 +1,70 @@
 services:
+  # --- DATABASE LAYER ---
+  # InfluxDB: Time-series database to store energy metrics and forecasts
   influxdb:
     image: influxdb:2.7
     container_name: influxdb
     ports:
-      - "8086:8086"
+      - "8086:8086" # InfluxDB API & UI Port
     volumes:
-      - influxdb_data:/var/lib/influxdb2
+      - influxdb_data:/var/lib/influxdb2 # Persistent storage for database files
     environment:
+      # Initial setup parameters (only runs on the first container startup)
       - DOCKER_INFLUXDB_INIT_MODE=setup
       - DOCKER_INFLUXDB_INIT_USERNAME=admin
       - DOCKER_INFLUXDB_INIT_PASSWORD=smartappliance
       - DOCKER_INFLUXDB_INIT_ORG=ucv
       - DOCKER_INFLUXDB_INIT_BUCKET=energy_data
+      # Static Admin Token used for secure communication between services
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=201dcc33-81e8-4d1d-94c0-a9a00ddafcab
 
-  mosquitto:
-    image: eclipse-mosquitto:2.0
-    container_name: mosquitto
-    ports:
-      - "1883:1883"
-    volumes:
-      - ./mosquitto/config:/mosquitto/config:ro
-
-  edge_simulator:
-    build: ./edge
-    container_name: sonoff_simulator
-    environment:
-      - MQTT_HOST=mosquitto
-      - MQTT_PORT=1883
-    command: python -u sonoff.py
-    depends_on:
-      - mosquitto
-    restart: on-failure
-
+  # --- AI/ANALYTICS LAYER ---
+  # Edge Forecast: Python service running the Prophet model for energy prediction
   edge_forecast:
-    build: ./edge
+    build: ./edge # Builds the image from the local Dockerfile in the /edge directory
     container_name: forecast_service
     environment:
+      # Connection details to talk to the InfluxDB container
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=201dcc33-81e8-4d1d-94c0-a9a00ddafcab
       - INFLUXDB_ORG=ucv
       - INFLUXDB_BUCKET=energy_data
-    command: python -u forecast_service.py
+    command: python -u forecast_service.py # -u flag for unbuffered logs (real-time console output)
     depends_on:
-      - influxdb
+      - influxdb # Ensures InfluxDB starts before the forecast service attempts to connect
     restart: on-failure
 
+  # --- LOGIC & AUTOMATION LAYER ---
+  # Node-RED: Handles MQTT telemetry processing and Edge AI control logic
   nodered:
     image: nodered/node-red:latest
     container_name: nodered_logic
     ports:
-      - "1880:1880"
+      - "1880:1880" # Web UI for flow editor
     volumes:
-      - node_red_data:/data
+      - node_red_data:/data # Persists flows, nodes, and configurations
     depends_on:
-      - mosquitto
       - influxdb
 
+  # --- VISUALIZATION LAYER ---
+  # Grafana: Dashboard interface for monitoring real-time data and forecasts
   grafana:
     image: grafana/grafana:11.1.0
     container_name: grafana
     ports:
-      - "3000:3000"
+      - "3000:3000" # Web UI Port
+    volumes:
+      - grafana_data:/var/lib/grafana # Persists dashboards and data source settings
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=smartappliance
     depends_on:
       - influxdb
-    volumes:
-      - grafana_data:/var/lib/grafana
 
-
+# --- PERSISTENCE LAYER ---
+# Named volumes to ensure data is not lost when containers are stopped or deleted
 volumes:
   node_red_data:
   grafana_data:
   influxdb_data:
   influxdb_config:
-
-
