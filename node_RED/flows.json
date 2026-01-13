@@ -181,7 +181,7 @@
                 "vt": "str"
             }
         ],
-        "repeat": "60",
+        "repeat": "10",
         "crontab": "",
         "once": false,
         "onceDelay": 0.1,
@@ -211,7 +211,8 @@
         "y": 780,
         "wires": [
             [
-                "53ddf3d45358debb"
+                "53ddf3d45358debb",
+                "17f0fd3283044a11"
             ]
         ]
     },
@@ -220,7 +221,7 @@
         "type": "function",
         "z": "4676ce2db9bd63d7",
         "name": "CheckAbove400W()",
-        "func": "/**\n * Flow 2: Edge AI - The Master Controller\n */\n\nif (Array.isArray(msg.payload)) {\n    const threshold = 400.0;\n    let mqttMessages = [];\n    let influxAlerts = [];\n\n    msg.payload.forEach(data => {\n        const id = data.deviceId;\n        const predictedPower = parseFloat(data.predicted_value || data._value);\n\n        if (id && !isNaN(predictedPower) && predictedPower > threshold) {\n            if (predictedPower > threshold) {\n                // ALERT: Send OFF through MQTT, OVERLOAD\n                mqttMessages.push({\n                    payload: \"OFF\",\n                    topic: `cmnd/${id}/POWER`\n                });\n\n                influxAlerts.push({\n                    payload: {\n                        alert_active: 1,\n                        device_id: id,\n                        predicted_val: predictedPower\n                    },\n                    measurement: \"system_alerts\"\n                });\n\n                node.warn(`[EDGE AI] OFF -> ${id} (${predictedPower}W) predicted`);\n            } else {\n                // SAFE STATUS\n                influxAlerts.push({\n                    payload: { alert_active: 0, device_id: id },\n                    measurement: \"system_alerts\"\n                });\n            }\n        }\n    });\n\n    node.status({ fill: \"green\", shape: \"dot\", text: \"Data processed\" });\n    return [mqttMessages.length > 0 ? mqttMessages : null, influxAlerts];\n}\n\nreturn null;",
+        "func": "/**\n * Flow 2: Edge AI - The Master Controller\n */\n\nif (Array.isArray(msg.payload) && msg.payload.length > 0) {\n    const threshold = 400.0;\n    let mqttMessages = [];\n    let influxAlerts = [];\n    let grouped = {};\n\n    msg.payload.forEach(row => {\n        const t = row._time;\n        if (!grouped[t]) grouped[t] = {};\n\n        const field = row._field;\n        const value = row._value;\n\n        if (field === \"device_id\") grouped[t].deviceId = value;\n        if (field === \"predicted_value\") grouped[t].power = parseFloat(value);\n\n        if (row.device_id) grouped[t].deviceId = row.device_id;\n        if (row.predicted_value) grouped[t].power = parseFloat(row.predicted_value);\n    });\n\n    Object.values(grouped).forEach(data => {\n        if (!data.deviceId || isNaN(data.power)) return;\n\n        let alertActive = data.power > threshold ? 1 : 0;\n        let device = data.deviceId;\n\n        let alertNode = {\n            payload: {\n                alert_active: alertActive,\n                device_id: device,\n                predicted_val: data.power\n            },\n            measurement: \"system_alerts\"\n        };\n\n        if (alertActive === 1) {\n            mqttMessages.push({\n                payload: \"OFF\",\n                topic: `cmnd/${device}/POWER`\n            });\n            node.warn(`[EDGE AI] OVERLOAD -> ${device} (${data.power.toFixed(2)} W)`);\n        }\n\n        influxAlerts.push(alertNode);\n    });\n\n    node.status({\n        fill: mqttMessages.length > 0 ? \"red\" : \"green\",\n        shape: \"dot\",\n        text: mqttMessages.length > 0 ? \"OVERLOAD - Alert sent\" : \"SAFE\"\n    });\n\n    return [mqttMessages.length > 0 ? mqttMessages : null, influxAlerts];\n}\n\nreturn null;",
         "outputs": 2,
         "timeout": 0,
         "noerr": 0,
@@ -514,7 +515,23 @@
         "wires": []
     },
     {
-        "id": "33705ffc819ca416",
+        "id": "17f0fd3283044a11",
+        "type": "debug",
+        "z": "4676ce2db9bd63d7",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 600,
+        "y": 880,
+        "wires": []
+    },
+    {
+        "id": "97c39b211742df8c",
         "type": "global-config",
         "env": [],
         "modules": {

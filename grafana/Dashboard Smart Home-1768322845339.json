@@ -159,7 +159,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB_SMART_HOME}"
           },
-          "query": "from(bucket: \"energy_data\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_usage\")\n  // 1. Selectăm câmpurile (Atenție: verifică dacă ai pus device_id sau _deviceId în Node-RED)\n  |> filter(fn: (r) => r[\"_field\"] == \"power\" or r[\"_field\"] == \"device_id\")\n  // 2. Pivotăm datele pentru a avea rânduri cu [time, power, device_id]\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  // 3. Filtrăm după priza selectată în dropdown-ul de sus\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device}\")\n  // 4. Luăm ultima înregistrare (tail nu are nevoie de coloana _value)\n  |> tail(n: 1)\n  // 5. Mapăm coloana 'power' înapoi la '_value' ca să știe Grafana ce să deseneze\n  |> map(fn: (r) => ({ _time: r._time, _value: r.power, name: r.device_id }))",
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"energy_usage\")\n  |> filter(fn: (r) => r[\"_field\"] == \"power\" or r[\"_field\"] == \"device_id\")\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device}\")\n  |> tail(n: 1)\n  |> map(fn: (r) => ({ _time: r._time, _value: r.power, name: r.device_id }))",
           "refId": "A"
         }
       ],
@@ -196,7 +196,7 @@
             }
           ],
           "thresholds": {
-            "mode": "absolute",
+            "mode": "percentage",
             "steps": [
               {
                 "color": "green",
@@ -242,7 +242,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB_SMART_HOME}"
           },
-          "query": "from(bucket: \"energy_data\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"system_alerts\")\n  |> filter(fn: (r) => r[\"_field\"] == \"alert_active\" or r[\"_field\"] == \"device_id\")\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device}\")\n  |> tail(n: 1)",
+          "query": "from(bucket: \"energy_data\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"system_alerts\")\n  |> filter(fn: (r) => r[\"_field\"] == \"alert_active\" or r[\"_field\"] == \"device_id\")\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => r[\"device_id\"] == \"${device}\")\n  |> last(column: \"_time\")\n  |> map(fn: (r) => ({\n      r with\n      _value: if r.alert_active == 1 then 1 else 0\n    }))\n  |> keep(columns: [\"_value\"])",
           "refId": "A"
         }
       ],
@@ -344,7 +344,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "predicted_value {_start=\"2026-01-12 20:37:05.052 +0000 UTC\", _stop=\"2026-01-13 20:00:06.085 +0000 UTC\"}"
+              "options": "predicted_value {_start=\"2026-01-13 07:56:47.599 +0000 UTC\", _stop=\"2026-01-13 21:49:00.251 +0000 UTC\"}"
             },
             "properties": [
               {
@@ -433,7 +433,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "predicted_value {_start=\"2026-01-12 20:37:05.052 +0000 UTC\", _stop=\"2026-01-13 20:00:06.085 +0000 UTC\"}"
+              "options": "predicted_value {_start=\"2026-01-13 07:56:47.599 +0000 UTC\", _stop=\"2026-01-13 21:49:00.251 +0000 UTC\"}"
             },
             "properties": [
               {
@@ -501,7 +501,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 160
       },
       "id": 7,
       "options": {
@@ -600,7 +600,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 160
       },
       "id": 6,
       "options": {
@@ -666,8 +666,8 @@
     ]
   },
   "time": {
-    "from": "now-6h",
-    "to": "now"
+    "from": "2026-01-13T07:56:47.599Z",
+    "to": "2026-01-13T21:49:00.251Z"
   },
   "timepicker": {},
   "timezone": "browser",
