@@ -164,4 +164,5 @@ while True:
     print("\n")
 
     # Wait 5 seconds before next telemetery cycle
-    time.sleep(5)
+    # Recommended minimum interval for Tasmota telemetery is 5 seconds, 15 seconds for production
+    time.sleep(1)  # 1s for demo purposes

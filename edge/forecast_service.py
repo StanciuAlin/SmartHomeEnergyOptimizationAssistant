@@ -8,124 +8,105 @@ from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 from influxdb_client.client.warnings import MissingPivotFunction
 
-# Disable the Pivot warning from InfluxDB client (we handle it in the Flux query)
+# Disable warnings and clean up console output
 warnings.simplefilter("ignore", MissingPivotFunction)
-
-# Disable logging for Prophet to keep the console clean
 logging.getLogger('prophet').setLevel(logging.ERROR)
 logging.getLogger('cmdstanpy').setLevel(logging.ERROR)
 
-# --- Configuration via Environment Variables ---
+# Config the InfluxDB connection using environment variables
 URL = os.getenv("INFLUXDB_URL", "http://influxdb:8086")
 TOKEN = os.getenv("INFLUXDB_TOKEN")
 ORG = os.getenv("INFLUXDB_ORG")
 BUCKET = os.getenv("INFLUXDB_BUCKET")
 
-# Initialize InfluxDB Client
 client = InfluxDBClient(url=URL, token=TOKEN, org=ORG)
 write_api = client.write_api(write_options=SYNCHRONOUS)
 query_api = client.query_api()
 
 
 def get_data_and_forecast():
-    """
-    Fetches historical energy data from InfluxDB, generates a forecast using Prophet,
-    and writes the predicted values back to InfluxDB.
-    """
-
     target_devices = ["sonoff_pow_01", "sonoff_pow_02"]
 
     for device_id in target_devices:
-        # 1. Query modificat: Filtrăm datele special pentru acest DEVICE
         query = f'''
-        from(bucket: "{BUCKET}") 
-            |> range(start: -24h) 
+            from(bucket: "{BUCKET}")
+            |> range(start: -24h)
             |> filter(fn: (r) => r["_measurement"] == "energy_usage")
-            |> filter(fn: (r) => r["device"] == "{device_id}")
-            |> filter(fn: (r) => r["_field"] == "power")
-            |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
+            |> filter(fn: (r) => r["_field"] == "power" or r["_field"] == "device_id")
             |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+            |> filter(fn: (r) => r["device_id"] == "{device_id}")
         '''
 
-        # Execute query and get result as a DataFrame
-        result = query_api.query_data_frame(query)
+        df = query_api.query_data_frame(query)
 
-        # REPAIR: InfluxDB v2 often returns a list of DataFrames; concatenate them if necessary
-        if isinstance(result, list):
-            if not result:
-                print(
-                    f"[{time.strftime('%H:%M:%S')}] Result list is empty. Waiting for data...")
-                return
-            df = pd.concat(result)
-        else:
-            df = result
+        if isinstance(df, list):
+            df = pd.concat(df) if df else pd.DataFrame()
 
-        # Check if DataFrame contains data
         if df.empty:
             print(
-                f"[{time.strftime('%H:%M:%S')}] No data found in DataFrame. Data collection in progress...")
-            return
+                f"[{time.strftime('%H:%M:%S')}] No data found for {device_id}. Skipping forecast.")
+            continue
 
-        # Check if the 'power' column exists after pivoting
         if 'power' not in df.columns:
             print(
-                f"[{time.strftime('%H:%M:%S')}] Column 'power' is missing. Check InfluxDB data/fields.")
-            return
+                f"[{time.strftime('%H:%M:%S')}] 'power' data missing for {device_id}.")
+            continue
 
-        # --- Data Preparation for Prophet ---
-        # Prophet requires columns 'ds' (datestamp) and 'y' (value to predict)
-        df = df[['_time', 'power']].rename(
+        df_prophet = df[['_time', 'power']].rename(
             columns={'_time': 'ds', 'power': 'y'})
+        df_prophet['ds'] = pd.to_datetime(
+            df_prophet['ds']).dt.tz_localize(None)
 
-        # Remove timezone information to avoid Prophet compatibility issues
-        df['ds'] = df['ds'].dt.tz_localize(None)
-
-        # Ensure we have enough data points (Prophet usually needs at least 2 points, but 15+ is better for stability)
-        if len(df) < 16:
+        if len(df_prophet) < 3:  # Prophet needs at least 3 data points to function, preferably more for better accuracy (trend detection)
             print(
-                f"[{time.strftime('%H:%M:%S')}] Not enough data points to train model.")
-            return
+                f"[{time.strftime('%H:%M:%S')}] {device_id}: insufficient points ({len(df_prophet)}).")
+            continue
 
-        # --- Modeling ---
-        # interval_width=0.95 sets the uncertainty interval (confidence range)
-        model = Prophet(interval_width=0.95)
-        model.fit(df)
+        '''
+        Prophet is a procedure for forecasting time series data based on an additive model where non-linear trends are fit with yearly, weekly, and daily seasonality, plus holiday effects. 
+        It works best with time series that have strong seasonal effects and several seasons of historical data. Prophet is robust to missing data and shifts in the trend, and typically handles outliers well.
+        '''
 
-        # Create a future dataframe for the next 6 hours
+        model = Prophet(
+            # Less sensitive to noise (decreased from 0.05)
+            changepoint_prior_scale=0.01,
+            uncertainty_samples=50,       # Enough samples for uncertainty estimation
+            interval_width=0.95,          # 95% prediction intervals
+            growth='linear'               # Linear growth model which fits power consumption better
+        )
+        model.fit(df_prophet)
+
         future = model.make_future_dataframe(periods=6, freq='h')
         forecast = model.predict(future)
 
-        # --- Filter for New Predictions Only ---
-        # We only want to save data points that are in the future relative to our last real data point
-        last_real_date = df['ds'].max()
+        # Ensure no negative predictions (for power consumption)
+        for col in ['yhat', 'yhat_upper', 'yhat_lower']:
+            forecast[col] = forecast[col].clip(lower=0)
+
+        last_real_date = df_prophet['ds'].max()
         predictions = forecast[forecast['ds'] > last_real_date].copy()
 
-        if predictions.empty:
-            print(
-                f"[{time.strftime('%H:%M:%S')}] No new prediction points generated.")
-            return
-
-        # --- Writing to InfluxDB ---
-        for index, row in predictions.iterrows():
+        # Write predictions back in InfluxDB
+        for _, row in predictions.iterrows():
             point = Point("energy_forecast") \
-                .tag("device", device_id) \
+                .field("device_id", device_id) \
                 .field("predicted_value", float(row['yhat'])) \
                 .field("upper_bound", float(row['yhat_upper'])) \
                 .field("lower_bound", float(row['yhat_lower'])) \
-                .time(row['ds'])
+                .time(row['ds'])  # InfluxDB will handle timezone correctly
 
             write_api.write(bucket=BUCKET, record=point)
 
-        print(f"[{time.strftime('%H:%M:%S')}] Forecast saved successfully ({len(predictions)} new points) to InfluxDB.")
+        print(f"[{time.strftime('%H:%M:%S')}] SUCCESS forecasting for {device_id} ({len(predictions)} points).")
 
 
 if __name__ == "__main__":
-    print(f"Forecast service started. Monitoring {BUCKET} bucket...")
+    print(f"Forecast Service is online on: {BUCKET}")
     while True:
         try:
             get_data_and_forecast()
         except Exception as e:
-            print(f"[{time.strftime('%H:%M:%S')}] Error in main loop: {e}")
-
-        # Run every 10 minutes (600 seconds)
-        time.sleep(600)
+            print(f"[{time.strftime('%H:%M:%S')}] Error: {e}")
+        # Run every 60 seconds and forecast for the next 6 hours
+        # Forecast interval can be 300 seconds or more for production
+        time.sleep(60)  # 60s for demo purposes
